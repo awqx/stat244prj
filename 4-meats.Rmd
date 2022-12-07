@@ -1,0 +1,409 @@
+---
+title: "PLS"
+author: "Al Xin"
+date: '2022-12-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pls)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+theme_set(theme_bw())
+
+# library(MASS)
+# install.packages("modeldata")
+library(modeldata)
+```
+
+## Data
+
+The covariance matrix of the predictors is graphed below. 
+
+```{r}
+data(meats)
+meats_cov <- cov(meats[, -c(101:103)]) %>%
+	data.frame() %>%
+	mutate(x = row.names(.)) %>%
+	melt(id.vars = "x", variable.name = "y", value.name = "z")
+ggplot(meats_cov, aes(x = x, y = y, fill = z)) +
+	scale_fill_viridis_c(option = "magma") +
+	geom_tile() + 
+	coord_fixed(1) +
+  theme(axis.text=element_blank(), axis.ticks=element_blank()) +
+	labs(x = "Predictors", y = "Predictors", fill = "Cov")
+```
+
+
+```{r}
+X <- meats
+N <- round(nrow(X) * 0.75)
+
+trn <- X[1:N, -c(101, 102)]
+tst <- X[(N+1):nrow(X), -c(101, 102)]
+tst_x <- X[(N+1):nrow(X), -c(101:103)]
+tst_y <- X[(N+1):nrow(X),  ]$protein 
+
+# If we were tuning a model, we would create a third split of val data
+```
+
+## Single Response Variable (Protein)
+
+### Creating Models
+
+```{r}
+pls1 <- plsr(
+	protein ~ ., 
+	data = trn,
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+
+pcr1 <- pcr(
+	protein ~ ., 
+	data = trn,
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+
+lm1 <- lm(protein ~ ., data = trn)
+```
+
+### Cross-validated RMSEP 
+
+```{r}
+plot(RMSEP(pls1), legendpos = "topright")
+plot(RMSEP(pcr1), legendpos = "topright")
+```
+
+```{r}
+rmse_tbl <- function(rmsep_output, model) {
+	rmsep_output %>%
+		.$val %>%
+		data.frame() %>%
+		.[1, ] %>%
+		melt(
+			value.name = "rmsep",
+			variable.name = "ncomp"
+		) %>%
+		mutate(ncomp = c(0:(nrow(.) - 1)), model = model)
+}
+
+pls1_rmse_trn <- rmse_tbl(RMSEP(pls1), "PLSR")
+pcr1_rmse_trn <- rmse_tbl(RMSEP(pcr1), "PCR")
+
+lm1_rmse_trn <- data.frame(
+	ncomp = c(0, 100), 
+	rmsep = sqrt(mean(lm1$residuals^2)), 
+	model = "MLR"
+)
+
+rmse_trn <- rbind(pls1_rmse_trn, pcr1_rmse_trn)
+
+ggplot(rmse_trn, aes(x = ncomp, y = rmsep, color = model)) + 
+	geom_line() + 
+	labs(
+		x = "Number of components", 
+		y = "RMSEP", 
+		color = "Model"
+	)
+# sqrt(mean(lm1$residuals^2))
+```
+
+### RMSEP on Test Set
+
+```{r}
+pls1_rmse_tst <- rmse_tbl(RMSEP(pls1, newdata = tst), "PLSR")
+pcr1_rmse_tst <- rmse_tbl(RMSEP(pcr1, newdata = tst), "PCR")
+
+# 28.25276
+lm1_rmse_tst <- data.frame(
+	ncomp = c(0, 100), 
+	rmsep = sqrt(mean((predict(lm1, tst_x) - tst_y)^2)), 
+	model = "MLR"
+)
+
+rmse_tst <- rbind(pls1_rmse_tst, pcr1_rmse_tst)
+
+ggplot(rmse_tst, aes(x = ncomp, y = rmsep, color = model)) + 
+	geom_line() + 
+	labs(
+		x = "Number of components", 
+		y = "RMSEP", 
+		color = "Model"
+	)
+```
+
+#### Facet Wrap
+
+```{r}
+rmse_all <- rbind(
+	mutate(rmse_trn, datasrc = "Train"), 
+	mutate(rmse_tst, datasrc = "Test")
+) %>%
+	mutate(datasrc = factor(datasrc, levels = c("Train", "Test")))
+
+ggplot(rmse_all, aes(x = ncomp, y = rmsep, color = model)) + 
+	geom_line() + 
+	facet_grid(. ~ datasrc) + 
+	labs(
+		x = "Number of components", 
+		y = "RMSEP", 
+		color = "Model"
+	)
+```
+
+### R-squared
+
+```{r}
+r2_tbl <- function(r2_output, model) {
+	r2_output %>%
+		.$val %>%
+		data.frame() %>%
+		melt(
+			value.name = "r2", 
+			variable.name = "ncomp"
+		) %>%
+		mutate(ncomp = c(0:(nrow(.) - 1)), model = model)
+}
+
+r2_all <- rbind(
+	mutate(
+		rbind(
+			r2_tbl(R2(pls1), "PLS"), 
+			r2_tbl(R2(pcr1), "PCR")
+		), 
+		datasrc = "Train"
+	), 
+	mutate(
+		rbind(
+			r2_tbl(R2(pls1, newdata = tst), "PLS"), 
+			r2_tbl(R2(pcr1, newdata = tst), "PCR") 
+		),
+		datasrc = "Test"
+	)
+) %>%
+	mutate(datasrc = factor(datasrc, levels = c("Train", "Test")))
+
+ggplot(r2_all, aes(x = ncomp, y = r2, color = model)) + 
+	geom_line() + 
+	facet_grid(. ~ datasrc) + 
+	labs(
+		x = "Number of components", 
+		y = "R-squared", 
+		color = "Model"
+	)
+
+# R-squared
+lm1_tst_y <- predict(lm1, tst_x)
+n <- length(lm1_tst_y)
+r_temp <- (n * sum(tst_y * lm1_tst_y) - sum(lm1_tst_y) * sum(tst_y)) / 
+	(sqrt(n * sum(lm1_tst_y^2) - sum(lm1_tst_y)^2) * sqrt(n * sum(tst_y^2) - sum(tst_y)^2))
+r_temp^2
+```
+
+### Visual Analysis
+
+```{r}
+vis_tbl <- function(model, model_name, ...) {
+	temp <- data.frame(
+		y = predict(model, tst_x, ...), 
+		x = tst_y, 
+		model = model_name
+	)
+	colnames(temp) <- c("y", "x", "model")
+	temp
+}
+
+vis_all <- rbind(
+	vis_tbl(pls1, "PLSR", ncomp = 14), 
+	vis_tbl(pcr1, "PCR", ncomp = 16), 
+	vis_tbl(lm1, "MLR")
+)
+
+ggplot(vis_all, aes(x = x, y = y)) + 
+	geom_point(alpha = 0.6) + 
+	facet_grid(. ~ model) + 
+	labs(
+		y = "Predicted protein content", 
+		x = "Actual protein content"
+	) + 
+	geom_abline(slope = 1, intercept = 0, color = "seagreen") + 
+	coord_fixed(1)
+
+```
+
+### Plotting Coefficients
+
+```{r}
+plot(
+	pls1, 
+	plottype = "coef", 
+	ncomp = 1:4, 
+	legendpos = "bottomright",
+	xlab = "Predictors", 
+	ylab = "Regression coefficient", 
+	main = "PLSR coefficients"
+)
+plot(
+	pcr1, 
+	plottype = "coef", 
+	ncomp = 1:4, 
+	xlab = "Predictors", 
+	ylab = "Regression coefficient", 
+	main = "PCR coefficients"
+)
+```
+
+```{r}
+plot(
+	pls1, 
+	plottype = "coef", 
+	ncomp = 13:16, 
+	legendpos = "bottomright",
+	xlab = "Predictors", 
+	ylab = "Regression coefficient", 
+	main = "PLSR coefficients"
+)
+plot(
+	pcr1, 
+	plottype = "coef", 
+	ncomp = 13:16, 
+	xlab = "Predictors", 
+	ylab = "Regression coefficient", 
+	main = "PCR coefficients"
+)
+```
+
+```{r}
+plot(
+	pcr1, 
+	plottype = "coef", 
+	ncomp = 13:16, 
+	legendpos = "topright",
+	xlab = "predictors"
+)
+```
+
+```{r}
+lm_coef <- data.frame(
+	pred = c(0:100), 
+	coef = lm1$coefficients
+)
+ggplot(lm_coef, aes(x = pred, y = coef)) + 
+	geom_line()
+```
+
+### Scores
+
+```{r}
+pls_scr <- data.frame(
+	x = as.vector(scores(pcr1)[ , 2]), 
+	y = trn$protein
+)
+ggplot(pls_scr, aes(x = x, y = y)) + 
+	geom_point()
+```
+
+
+## Multiple Dependent Variables
+
+```{r}
+trn_x <- X[1:N, -c(101:103)] %>% as.matrix()
+trn_y <- X[1:N,  c(101:103)] %>% as.matrix()
+tst_x <- X[(N+1):nrow(X), -c(101:103)] %>% as.matrix()
+tst_y <- X[(N+1):nrow(X),  c(101:103)] %>% as.matrix()
+
+trn_w <- as.matrix(trn$water)
+trn_f <- as.matrix(trn$fat)
+trn_p <- as.matrix(trn$protein)
+```
+
+```{r}
+library(tictoc)
+tic()
+pls2 <- plsr(
+	trn_y ~ trn_x, 
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+toc()
+
+tic()
+pcr2w <- pcr(
+	trn_w ~ trn_x,
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+
+pcr2f <- pcr(
+	trn_f ~ trn_x,
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+
+pcr2p <- pcr(
+  trn_p ~ trn_x,
+	ncomp = 100,
+	scale = T,
+	validation = "LOO"
+)
+toc()
+
+tic()
+pcr2 <- pcr(
+	trn_y ~ trn_x, 
+	ncomp = 100, 
+	scale = T, 
+	validation = "LOO"
+)
+toc()
+```
+
+```{r}
+plot(
+	RMSEP(pls2), 
+	legendpos = "topright", 
+	ylim = c(0, 8), 
+	xlab = "Number of components"
+)
+
+plot(
+	RMSEP(pcr2), 
+	legendpos = "topright", 
+	ylim = c(0, 8), 
+	xlab = "Number of components"
+)
+```
+
+```{r}
+plot(
+	R2(pls2), 
+	legendpos = "topright", 
+	xlab = "Number of components"
+)
+
+plot(
+	R2(pcr2), 
+	legendpos = "topright", 
+	xlab = "Number of components"
+)
+```
+
+```{r}
+summary(pcr1)
+```
+
+```{r}
+# install.packages("stargazer")
+# library(stargazer)
+# stargazer(lm1, title="Regression Results", align=TRUE)
+```
+

@@ -1,0 +1,53 @@
+---
+title: "PLS"
+author: "Al Xin"
+date: '2022-12-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pls)
+library(ggplot2)
+library(dplyr)
+theme_set(theme_bw())
+
+library(MASS)
+```
+
+```{r}
+N <- round(nrow(X) * 0.75)
+trn <- X[1:N, ]
+tst_x <- X[(N+1):nrow(X), ]
+tst_y <- X[(N+1):nrow(X), ]
+```
+
+```{r}
+pls1 <- plsr(
+	y ~ ., 
+	ncomp = 10, 
+	data = trn, 
+	validation = "LOO"
+)
+```
+
+```{r}
+plot(RMSEP(pls1), legendpos = "topright")
+```
+
+```{r}
+lm1 <- lm(
+	y ~ ., 
+	trn
+)
+summary(lm1)
+```
+
+```{r}
+sqrt(sum((predict(lm1, tst_x) - tst_y)^2) / length(tst_y))
+```
+
+```{r}
+sqrt(sum((predict(pls1, tst_x, ncomp = 6) - tst_y)^2) / length(tst_y))
+```
+

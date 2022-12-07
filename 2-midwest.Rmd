@@ -1,0 +1,58 @@
+---
+title: "PLS on Midwest Demographic Data"
+author: "Al Xin"
+date: '2022-12-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+```{r}
+data(midwest)
+X <- dplyr::select(
+	midwest, 
+	-PID:-state, 
+	-popwhite:-popother,
+	-percother, 
+	-poppovertyknown,
+	-inmetro, 
+	-category
+)
+
+trn <- X[1:330, ]
+tst_x <- X[331:437, -4]
+tst_y <- X[331:437, 4]
+```
+
+```{r}
+pls1 <- plsr(
+	percwhite ~ ., 
+	ncomp = 10, 
+	data = trn, 
+	validation = "LOO"
+)
+```
+
+```{r}
+plot(RMSEP(pls1), legendpos = "topright")
+```
+
+```{r}
+lm1 <- lm(
+	percwhite ~ ., 
+	trn
+)
+summary(lm1)
+```
+
+```{r}
+sqrt(sum((predict(lm1, tst_x) - tst_y)^2) / length(tst_y))
+```
+
+```{r}
+sqrt(sum((predict(pls1, tst_x, ncomp = 6) - tst_y)^2) / length(tst_y))
+```
+

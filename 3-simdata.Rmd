@@ -1,0 +1,61 @@
+---
+title: "PLS on Simulated Data"
+author: "Al Xin"
+date: '2022-12-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pls)
+library(ggplot2)
+library(dplyr)
+theme_set(theme_bw())
+
+library(MASS)
+```
+
+## Data simulation
+
+We will generate 5 predictors $X_1, \dots, X_5$ from a multivariate normal distribution with the following covariance matrix:
+
+```{r}
+cov_mat <- matrix(
+	data = c(
+		1.0, 0.8, 0.1, 0.2, 0.9, 
+		0.8, 2.0, 0.2, 0.3, 0.9, 
+		0.1, 0.2, 3.0, 0.9, 0.2, 
+		0.2, 0.3, 0.9, 4.0, 0.3,
+		0.9, 0.9, 0.2, 0.3, 9.9
+	), 
+	nrow = 5
+)
+```
+
+Notice the variances are not standardized. The means are all zero. 
+
+The response variable will be modeled as
+
+$$
+Y = X_1 + X_2 + \epsilon, \epsilon \sim \mathcal{N}(0, 4).
+$$
+```{r}
+set.seed(244)
+df <- mvrnorm(
+	n = 32, 
+	mu = rep(0, 5), 
+	Sigma = cov_mat
+) %>%
+	data.frame() %>%
+	mutate(Y = X1 + X2 + rnorm(32, 0, 1))
+trn <- df[1:24, ]
+tst <- df[25:32, ]
+```
+
+## Linear model
+```{r}
+lm1 <- lm(Y ~ ., trn)
+summary(lm1)
+```
+
+
