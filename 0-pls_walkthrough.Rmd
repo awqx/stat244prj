@@ -1,0 +1,21 @@
+---
+title: "Walkthrough of `pls`"
+author: "Al Xin"
+date: '2022-12-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pls)
+library(ggplot2)
+```
+
+## Data loading
+```{r}
+data(yarn)
+data(oliveoil)
+data(gasoline)
+```
+
+
